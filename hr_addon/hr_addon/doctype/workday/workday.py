@@ -696,6 +696,12 @@ def create_workday_from_api(data):
 	if isinstance(data, str):
 		data = json.loads(data)
 	
+	# If data is a list, take the first element
+	if isinstance(data, list):
+		if not data:
+			frappe.throw(_("Empty data array provided"))
+		data = data[0]
+	
 	# Validate required fields
 	if not data.get("employee"):
 		frappe.throw(_("Employee is required"))
@@ -713,22 +719,26 @@ def create_workday_from_api(data):
 		try:
 			# Try parsing German format: "10.11.2025, 06:30:00"
 			first_checkin = datetime.strptime(data.get("first_checkin"), "%d.%m.%Y, %H:%M:%S")
-		except:
+		except Exception as e:
 			try:
 				# Try ISO format or other formats
 				first_checkin = get_datetime(data.get("first_checkin"))
-			except:
+			except Exception:
+				# Log the error but continue
+				frappe.log_error(f"Could not parse first_checkin: {data.get('first_checkin')}, Error: {str(e)}")
 				first_checkin = None
 	
 	if data.get("last_checkout"):
 		try:
 			# Try parsing German format: "10.11.2025, 16:30:00"
 			last_checkout = datetime.strptime(data.get("last_checkout"), "%d.%m.%Y, %H:%M:%S")
-		except:
+		except Exception as e:
 			try:
 				# Try ISO format or other formats
 				last_checkout = get_datetime(data.get("last_checkout"))
-			except:
+			except Exception:
+				# Log the error but continue
+				frappe.log_error(f"Could not parse last_checkout: {data.get('last_checkout')}, Error: {str(e)}")
 				last_checkout = None
 	
 	# Check if workday already exists
