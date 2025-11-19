@@ -14,10 +14,12 @@ import traceback
 
 class Workday(Document):
 	def validate(self):
-		self.set_actual_employee_log()
-		self.date_is_in_comp_off()
+		# Skip automatic data fetching/manipulation if coming from API with skip_auto_fetch flag
+		if not getattr(self, 'skip_auto_fetch', False):
+			self.set_actual_employee_log()
+			self.date_is_in_comp_off()
+			self.set_status_for_leave_application()
 		self.validate_duplicate_workday()
-		self.set_status_for_leave_application()
 
 	def set_actual_employee_log(self):
 		new_workday_dict = get_actual_employee_log(self.employee, self.log_date)
@@ -654,3 +656,127 @@ def bulk_process_workdays(data,flag):
 		"missing_dates": formatted_missing_dates,
 		"flag":flag
 	}
+
+
+@frappe.whitelist()
+def create_workday_from_api(data):
+	"""
+	Create a Workday document with custom data from API (e.g., n8n workflow).
+	This function bypasses the automatic data fetching and uses the provided data directly.
+	
+	Args:
+		data (dict or str): Dictionary containing workday data or JSON string
+		
+	Expected data structure:
+	{
+		"employee": "HR-EMP-00001",
+		"employee_name": "Max Mustermann",
+		"attendance_date": "2025-11-10",
+		"start_time": "06:30:00",
+		"end_time": "16:30:00",
+		"total_hours": 10,
+		"break_hours": 0.75,
+		"net_hours": 9.25,
+		"expected_hours": 8,
+		"expected_break_hours": 0.5,  # Optional, defaults to break_hours
+		"status": "Present",
+		"attendance": "ATT-00001",  # Optional, link to Attendance document
+		"total_checkins": 2,
+		"first_checkin": "10.11.2025, 06:30:00",
+		"last_checkout": "10.11.2025, 16:30:00"
+	}
+	
+	Returns:
+		dict: Created workday document as dict
+	"""
+	import json
+	from datetime import datetime
+	
+	# Parse JSON string if necessary
+	if isinstance(data, str):
+		data = json.loads(data)
+	
+	# Validate required fields
+	if not data.get("employee"):
+		frappe.throw(_("Employee is required"))
+	if not data.get("attendance_date"):
+		frappe.throw(_("Attendance date is required"))
+	
+	# Parse dates and times
+	log_date = getdate(data.get("attendance_date"))
+	
+	# Parse first_checkin and last_checkout if provided in German format
+	first_checkin = None
+	last_checkout = None
+	
+	if data.get("first_checkin"):
+		try:
+			# Try parsing German format: "10.11.2025, 06:30:00"
+			first_checkin = datetime.strptime(data.get("first_checkin"), "%d.%m.%Y, %H:%M:%S")
+		except:
+			try:
+				# Try ISO format or other formats
+				first_checkin = get_datetime(data.get("first_checkin"))
+			except:
+				first_checkin = None
+	
+	if data.get("last_checkout"):
+		try:
+			# Try parsing German format: "10.11.2025, 16:30:00"
+			last_checkout = datetime.strptime(data.get("last_checkout"), "%d.%m.%Y, %H:%M:%S")
+		except:
+			try:
+				# Try ISO format or other formats
+				last_checkout = get_datetime(data.get("last_checkout"))
+			except:
+				last_checkout = None
+	
+	# Check if workday already exists
+	existing_workday = frappe.db.exists("Workday", {
+		"employee": data.get("employee"),
+		"log_date": log_date
+	})
+	
+	if existing_workday:
+		frappe.throw(
+			_("Workday already exists for employee {0} on {1}").format(
+				data.get("employee"), 
+				formatdate(log_date)
+			)
+		)
+	
+	# Get company from employee
+	company = frappe.db.get_value("Employee", data.get("employee"), "company")
+	
+	# Create workday document
+	workday = frappe.new_doc("Workday")
+	workday.skip_auto_fetch = True  # Skip automatic data fetching
+	
+	# Set basic fields
+	workday.employee = data.get("employee")
+	workday.employee_name = data.get("employee_name")
+	workday.log_date = log_date
+	workday.status = data.get("status", "")
+	workday.company = company
+	
+	# Set attendance if provided
+	if data.get("attendance"):
+		workday.attendance = data.get("attendance")
+	
+	# Set hours
+	workday.target_hours = flt(data.get("expected_hours", 0))
+	workday.hours_worked = flt(data.get("total_hours", 0))
+	workday.break_hours = flt(data.get("break_hours", 0))
+	workday.actual_working_hours = flt(data.get("net_hours", 0))
+	workday.expected_break_hours = flt(data.get("expected_break_hours", data.get("break_hours", 0)))
+	
+	# Set checkin/checkout times
+	if first_checkin:
+		workday.first_checkin = first_checkin
+	if last_checkout:
+		workday.last_checkout = last_checkout
+	
+	# Save the document
+	workday.insert()
+	
+	return workday.as_dict()
