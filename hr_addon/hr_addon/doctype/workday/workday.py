@@ -758,52 +758,49 @@ def create_workday_from_api(data):
 	
 	frappe.logger().info(f"Final parsed values - first_checkin: {first_checkin}, last_checkout: {last_checkout}")
 	
-	# Check if workday already exists
-	existing_workday = frappe.db.exists("Workday", {
-		"employee": data.get("employee"),
-		"log_date": log_date
-	})
-	
-	if existing_workday:
-		frappe.throw(
-			_("Workday already exists for employee {0} on {1}").format(
-				data.get("employee"), 
-				formatdate(log_date)
-			)
-		)
-	
-	# Get company from employee
-	company = frappe.db.get_value("Employee", data.get("employee"), "company")
-	
-	# Create workday document
-	workday = frappe.new_doc("Workday")
-	workday.skip_auto_fetch = True  # Skip automatic data fetching
-	
-	# Set basic fields
-	workday.employee = data.get("employee")
-	workday.employee_name = data.get("employee_name")
-	workday.log_date = log_date
-	workday.status = data.get("status", "")
-	workday.company = company
-	
-	# Set attendance if provided
-	if data.get("attendance"):
-		workday.attendance = data.get("attendance")
-	
-	# Set hours
-	workday.target_hours = flt(data.get("expected_hours", 0))
-	workday.hours_worked = flt(data.get("total_hours", 0))
-	workday.break_hours = flt(data.get("break_hours", 0))
-	workday.actual_working_hours = flt(data.get("net_hours", 0))
-	workday.expected_break_hours = flt(data.get("expected_break_hours", data.get("break_hours", 0)))
-	
-	# Set checkin/checkout times
-	if first_checkin:
-		workday.first_checkin = first_checkin
-	if last_checkout:
-		workday.last_checkout = last_checkout
-	
-	# Save the document
-	workday.insert()
-	
-	return workday.as_dict()
+	# Check if workday already exists - same pattern as bulk_process_workdays
+	if not frappe.db.exists('Workday', {'employee': data.get("employee"), 'log_date': log_date}):
+		# Get company from employee
+		company = frappe.db.get_value("Employee", data.get("employee"), "company")
+		
+		# Create workday document
+		workday = frappe.new_doc("Workday")
+		workday.skip_auto_fetch = True  # Skip automatic data fetching
+		
+		# Set basic fields
+		workday.employee = data.get("employee")
+		workday.employee_name = data.get("employee_name")
+		workday.log_date = log_date
+		workday.status = data.get("status", "")
+		workday.company = company
+		
+		# Set attendance if provided
+		if data.get("attendance"):
+			workday.attendance = data.get("attendance")
+		
+		# Set hours
+		workday.target_hours = flt(data.get("expected_hours", 0))
+		workday.hours_worked = flt(data.get("total_hours", 0))
+		workday.break_hours = flt(data.get("break_hours", 0))
+		workday.actual_working_hours = flt(data.get("net_hours", 0))
+		workday.expected_break_hours = flt(data.get("expected_break_hours", data.get("break_hours", 0)))
+		
+		# Set checkin/checkout times
+		if first_checkin:
+			workday.first_checkin = first_checkin
+		if last_checkout:
+			workday.last_checkout = last_checkout
+		
+		# Save the document
+		workday.insert()
+		frappe.logger().info(f"Successfully created workday {workday.name}")
+		return workday.as_dict()
+	else:
+		# Workday already exists, return it
+		existing_workday_name = frappe.db.get_value("Workday", {
+			'employee': data.get("employee"),
+			'log_date': log_date
+		}, "name")
+		frappe.logger().info(f"Workday {existing_workday_name} already exists, returning it")
+		existing_workday = frappe.get_doc("Workday", existing_workday_name)
+		return existing_workday.as_dict()
