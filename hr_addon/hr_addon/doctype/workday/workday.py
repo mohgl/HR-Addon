@@ -715,31 +715,48 @@ def create_workday_from_api(data):
 	first_checkin = None
 	last_checkout = None
 	
+	# Debug: Log received data
+	frappe.logger().info(f"API Data received: {json.dumps(data, indent=2)}")
+	
 	if data.get("first_checkin"):
+		first_checkin_str = data.get("first_checkin")
+		frappe.logger().info(f"Attempting to parse first_checkin: '{first_checkin_str}' (type: {type(first_checkin_str)})")
 		try:
 			# Try parsing German format: "10.11.2025, 06:30:00"
-			first_checkin = datetime.strptime(data.get("first_checkin"), "%d.%m.%Y, %H:%M:%S")
+			first_checkin = datetime.strptime(first_checkin_str, "%d.%m.%Y, %H:%M:%S")
+			frappe.logger().info(f"Successfully parsed first_checkin as German format: {first_checkin}")
 		except Exception as e:
+			frappe.logger().warning(f"Failed to parse first_checkin as German format: {str(e)}")
 			try:
 				# Try ISO format or other formats
-				first_checkin = get_datetime(data.get("first_checkin"))
-			except Exception:
+				first_checkin = get_datetime(first_checkin_str)
+				frappe.logger().info(f"Successfully parsed first_checkin with get_datetime: {first_checkin}")
+			except Exception as e2:
 				# Log the error but continue
-				frappe.log_error(f"Could not parse first_checkin: {data.get('first_checkin')}, Error: {str(e)}")
+				frappe.log_error(f"Could not parse first_checkin: '{first_checkin_str}'\nFirst error: {str(e)}\nSecond error: {str(e2)}", "Workday API - Parse Error")
+				frappe.logger().error(f"Could not parse first_checkin at all: {str(e2)}")
 				first_checkin = None
 	
 	if data.get("last_checkout"):
+		last_checkout_str = data.get("last_checkout")
+		frappe.logger().info(f"Attempting to parse last_checkout: '{last_checkout_str}' (type: {type(last_checkout_str)})")
 		try:
 			# Try parsing German format: "10.11.2025, 16:30:00"
-			last_checkout = datetime.strptime(data.get("last_checkout"), "%d.%m.%Y, %H:%M:%S")
+			last_checkout = datetime.strptime(last_checkout_str, "%d.%m.%Y, %H:%M:%S")
+			frappe.logger().info(f"Successfully parsed last_checkout as German format: {last_checkout}")
 		except Exception as e:
+			frappe.logger().warning(f"Failed to parse last_checkout as German format: {str(e)}")
 			try:
 				# Try ISO format or other formats
-				last_checkout = get_datetime(data.get("last_checkout"))
-			except Exception:
+				last_checkout = get_datetime(last_checkout_str)
+				frappe.logger().info(f"Successfully parsed last_checkout with get_datetime: {last_checkout}")
+			except Exception as e2:
 				# Log the error but continue
-				frappe.log_error(f"Could not parse last_checkout: {data.get('last_checkout')}, Error: {str(e)}")
+				frappe.log_error(f"Could not parse last_checkout: '{last_checkout_str}'\nFirst error: {str(e)}\nSecond error: {str(e2)}", "Workday API - Parse Error")
+				frappe.logger().error(f"Could not parse last_checkout at all: {str(e2)}")
 				last_checkout = None
+	
+	frappe.logger().info(f"Final parsed values - first_checkin: {first_checkin}, last_checkout: {last_checkout}")
 	
 	# Check if workday already exists
 	existing_workday = frappe.db.exists("Workday", {
